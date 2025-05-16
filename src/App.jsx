@@ -1,23 +1,24 @@
 import { useEffect, useState } from "react";
 import DeviceCard from "./components/DeviceCard";
+import TimerControl from "./components/TimerControl";
+import PosteControl from "./components/PosteControl";
+import CircuitoStatus from "./components/CircuitoStatus";
+import DefaultDeviceControl from "./components/DefaultDeviceControl";
 import { ref, set, onValue } from "firebase/database";
 import { db } from "./firebaseConfig";
 
-// Nome amigável => Chave no Firebase
 const firebaseKeys = {
   "Luz dos Postes": "led",
-  "Luz do Jardin": "led2",
   "Temporizar Tarefas": "timer",
-  "Paineis Solares": "solar",
-  "Consumo Total de Energia": "energy",
+  "Gerador": "generator",
+  "Circuito": "circuito/status",
 };
 
 const devices = [
   { name: "Luz dos Postes", icon: "💡" },
-  { name: "Luz do Jardin", icon: "🌳" },
-  { name: "Temporizar Tarefas", icon: "🔔" },
-  { name: "Paineis Solares", icon: "🌞" },
-  { name: "Consumo Total de Energia", icon: "⚡" },
+  { name: "Temporizar Tarefas", icon: "🕒" },
+  { name: "Gerador", icon: "🔋" },
+  { name: "Circuito", icon: "⚡" },
 ];
 
 export default function App() {
@@ -25,13 +26,11 @@ export default function App() {
 
   const [deviceStates, setDeviceStates] = useState({
     "Luz dos Postes": false,
-    "Luz do Jardin": false,
     "Temporizar Tarefas": false,
-    "Paineis Solares": false,
-    "Consumo Total de Energia": false,
+    "Gerador": false,
+    "Circuito": false,
   });
 
-  // Alternar estado do dispositivo no Firebase
   const toggleDevice = async (deviceName) => {
     const estadoAtual = deviceStates[deviceName];
     const novoEstado = estadoAtual ? "off" : "on";
@@ -53,7 +52,6 @@ export default function App() {
     }
   };
 
-  // Escutar atualizações em tempo real
   useEffect(() => {
     const unsubscribes = Object.entries(firebaseKeys).map(([name, key]) => {
       const deviceRef = ref(db, key);
@@ -93,31 +91,27 @@ export default function App() {
 
         <div className="w-2/3 p-6 bg-white bg-opacity-20 rounded-lg shadow-lg">
           {selectedDevice ? (
-            <>
-              <h2 className="text-2xl font-bold mb-4 text-white">
-                {selectedDevice.icon} {selectedDevice.name}
-              </h2>
-              <p className="text-2xl font-bold mb-4 text-white">
-                Status:{" "}
-                <span className="font-semibold">
-                  {deviceStates[selectedDevice.name] ? "Ligado" : "Desligado"}
-                </span>
-              </p>
-              <button
-                className={`mt-4 px-4 py-2 rounded transition ${
-                  deviceStates[selectedDevice.name]
-                    ? "bg-red-600 hover:bg-red-700"
-                    : "bg-green-600 hover:bg-green-700"
-                }`}
-                onClick={() => toggleDevice(selectedDevice.name)}
-              >
-                {deviceStates[selectedDevice.name] ? "Desligar" : "Ligar"}
-              </button>
-            </>
+            selectedDevice.name === "Temporizar Tarefas" ? (
+              <TimerControl />
+            ) : selectedDevice.name === "Circuito" ? (
+              <CircuitoStatus
+                isOn={deviceStates["Circuito"]}
+                onToggle={() => toggleDevice("Circuito")}
+              />
+            ) : selectedDevice.name === "Luz dos Postes" ? (
+              <PosteControl
+                isOn={deviceStates["Luz dos Postes"]}
+                onToggle={() => toggleDevice("Luz dos Postes")}
+              />
+            ) : (
+              <DefaultDeviceControl
+                name={selectedDevice.name}
+                isOn={deviceStates[selectedDevice.name]}
+                onToggle={() => toggleDevice(selectedDevice.name)}
+              />
+            )
           ) : (
-            <p className="italic text-white">
-              Selecione um dispositivo à esquerda.
-            </p>
+            <p className="italic text-white">Selecione um dispositivo à esquerda.</p>
           )}
         </div>
       </div>

@@ -16,37 +16,69 @@ const char			*firebaseURL_LED = "https://esp-api-10fa5-default-rtdb.firebaseio.c
 const char			*firebaseURL_CIRCUITO = "https://esp-api-10fa5-default-rtdb.firebaseio.com/circuito.json";
 
 // Pinos
-const int			relePim1 = 27; // LED
-const int			relePim2 = 26; // Circuito
+const int			relePim1 = 27;
+const int			relePim2 = 26;
 const int			pirPin = 14;
-const int			ledTeste = 13;
+const int			ledAssentos1 = 13;
+const int			ledAssentos2 = 25;
 const int			ldrPin = 34;
+const int			sensorCorrente1 = 32;
+const int			sensorCorrente2 = 33;
+const int			sensorCorrente3 = 35;
 
 // PIR
 bool				pirTriggered = false;
 unsigned long		pirTriggerTime = 0;
 const unsigned long	pirActiveDuration = 10000;
 
-// LED manual com luz
-bool				ledManualComSol = false;
-unsigned long		tempoInicioLedManual = 0;
-const unsigned long	duracaoLedComSol = 20000; // 20 segundos
+// Controle de comando root
+unsigned long		tempoComandoRoot = 0;
+bool				comandoRootAtivo = false;
+const unsigned long	duracaoComandoRoot = 20000;
 
+// Task e controle de estado
+TaskHandle_t		TaskLightHandle = NULL;
+String				estadoLedGlobal = "";
+bool				wifiConnected = false;
+
+// Variáveis estáticas para controle dentro da função controlLight
+static String		ultimoStatus = "";
+static String		ultimoTipo = "";
+
+// Variáveis para precisao de corrente
+const int			OFFSET = 2047; // valor médio sem corrente
+const int			MARGEM = 50;   // tolerância para considerar "sem corrente"
+
+int					offsetL1;
+
+int	calibraOffset(int pino)
+{
+	long	soma;
+
+	soma = 0;
+	for (int i = 0; i < 50; i++)
+	{
+		soma += analogRead(pino);
+	}
+	return (soma / 50);
+}
 // -----------------------------------------------------------------------------
-// Função setup
 void	setup(void)
 {
 	Serial.begin(115200);
 	pinMode(relePim1, OUTPUT);
 	pinMode(relePim2, OUTPUT);
 	pinMode(pirPin, INPUT);
-	pinMode(ledTeste, OUTPUT);
+	pinMode(ledAssentos1, OUTPUT);
+	pinMode(ledAssentos1, OUTPUT);
+	pinMode(sensorCorrente1, INPUT);
+	pinMode(sensorCorrente2, INPUT);
+	pinMode(sensorCorrente3, INPUT);
 	digitalWrite(relePim1, HIGH);
 	digitalWrite(relePim2, HIGH);
+	offsetL1 = calibraOffset(sensorCorrente1);
 	if (!WiFi.config(local_IP, gateway, subnet))
-	{
 		Serial.println("Falha ao configurar IP estático");
-	}
 	WiFi.begin(ssid, password);
 	Serial.print("Conectando-se ao WiFi");
 	while (WiFi.status() != WL_CONNECTED)
@@ -57,19 +89,20 @@ void	setup(void)
 	Serial.println();
 	Serial.print("Conectado! IP: ");
 	Serial.println(WiFi.localIP());
+	xTaskCreatePinnedToCore(TaskControlLight, "TaskControlLight", 4096, NULL, 1,
+		&TaskLightHandle, 0);
 }
 
 // -----------------------------------------------------------------------------
-// Obter estado do Firebase
 String	obterEstadoFirebase(const char *url)
 {
 	HTTPClient	http;
-	int			httpCode;
 	String		payload;
+	int			httpCode;
 
+	payload = "";
 	http.begin(url);
 	httpCode = http.GET();
-	payload = "";
 	if (httpCode == 200)
 	{
 		payload = http.getString();
@@ -85,7 +118,6 @@ String	obterEstadoFirebase(const char *url)
 }
 
 // -----------------------------------------------------------------------------
-// Atualizar estado no Firebase
 void	atualizarEstadoFirebase(const String &novoEstado, const String &tipo,
 		const String &acesso)
 {
@@ -94,10 +126,10 @@ void	atualizarEstadoFirebase(const String &novoEstado, const String &tipo,
 	String		jsonPayload;
 	int			httpCode;
 
-	http.begin(url);
-	http.addHeader("Content-Type", "application/json");
 	jsonPayload = "{\"status\":\"" + novoEstado + "\",\"type\":\"" + acesso
 		+ "\"}";
+	http.begin(url);
+	http.addHeader("Content-Type", "application/json");
 	httpCode = http.PUT(jsonPayload);
 	if (httpCode > 0)
 		Serial.println("Estado atualizado com sucesso no Firebase.");
@@ -107,15 +139,23 @@ void	atualizarEstadoFirebase(const String &novoEstado, const String &tipo,
 }
 
 // -----------------------------------------------------------------------------
-// Controle baseado em LDR + Firebase
-void	verificarLDR(String payload)
+void	controlLight(String payload, String connect)
 {
 	int						ldrValue;
 	DeserializationError	error;
 	String					status;
 	String					type;
+	unsigned long			tempoPassado;
 
 	ldrValue = analogRead(ldrPin);
+	if (connect == "offline")
+	{
+		if (ldrValue <= 100)
+			digitalWrite(relePim1, LOW);
+		else
+			digitalWrite(relePim1, HIGH);
+		return ;
+	}
 	StaticJsonDocument<100> doc;
 	error = deserializeJson(doc, payload);
 	if (error)
@@ -127,58 +167,60 @@ void	verificarLDR(String payload)
 	type = doc["type"] | "";
 	Serial.printf("LDR: %d | status: %s | type: %s\n", ldrValue, status.c_str(),
 		type.c_str());
-	// Controle manual (root)
-	if (type == "root")
+	// Se comando root foi recebido e é diferente do último comando root,
+		iniciar timer
+	if (type == "root" && (status != ultimoStatus || type != ultimoTipo))
 	{
-		if (status == "off")
+		comandoRootAtivo = true;
+		tempoComandoRoot = millis();
+		ultimoStatus = status;
+		ultimoTipo = type;
+		if (status == "on")
+		{
+			digitalWrite(relePim1, LOW);
+			Serial.println("ROOT: Ligando luz manualmente por 50s.");
+		}
+		else if (status == "off")
 		{
 			digitalWrite(relePim1, HIGH);
-			ledManualComSol = false;
+			Serial.println("ROOT: Desligando luz manualmente por 50s.");
+		}
+		return ; // Para não executar mais código até o tempo expirar
+	}
+	// Durante o tempo do root, manter decisão manual e ignorar LDR
+	if (comandoRootAtivo)
+	{
+		tempoPassado = millis() - tempoComandoRoot;
+		Serial.printf("Tempo desde root: %lu ms\n", tempoPassado);
+		if (tempoPassado < duracaoComandoRoot)
+		{
+			Serial.println("Aguardando fim dos 50s do comando root...");
 			return ;
 		}
-		if (status == "on" && ldrValue > 100)
+		else
 		{
-			if (!ledManualComSol)
-			{
-				digitalWrite(relePim1, LOW);
-				tempoInicioLedManual = millis();
-				ledManualComSol = true;
-				Serial.println("Ligando LED manualmente por 20s (ambiente claro).");
-			}
-			else if (millis() - tempoInicioLedManual >= duracaoLedComSol)
-			{
-				digitalWrite(relePim1, HIGH);
-				atualizarEstadoFirebase("off", "led", "ldr");
-				ledManualComSol = false;
-				Serial.println("Desligando LED
-					- tempo manual com luz expirado.");
-			}
+			comandoRootAtivo = false;
+			Serial.println("Tempo do comando root expirou.");
 		}
-		else if (status == "on" && ldrValue <= 100)
-		{
-			digitalWrite(relePim1, LOW);
-			ledManualComSol = false;
-		}
-		return ;
 	}
-	// Controle automático (LDR)
-	if (type == "ldr")
+	// CONTROLE LDR - após root ou em uso normal
+	if (ldrValue <= 100 && ultimoStatus != "on")
 	{
-		if (ldrValue <= 100 && status != "on")
-		{
-			digitalWrite(relePim1, LOW);
-			atualizarEstadoFirebase("on", "led", "ldr");
-		}
-		else if (ldrValue > 100 && status != "off")
-		{
-			digitalWrite(relePim1, HIGH);
-			atualizarEstadoFirebase("off", "led", "ldr");
-		}
+		digitalWrite(relePim1, LOW);
+		atualizarEstadoFirebase("on", "led", "ldr");
+		ultimoStatus = "on";
+		Serial.println("LDR: escuro -> Ligando");
+	}
+	else if (ldrValue > 100 && ultimoStatus != "off")
+	{
+		digitalWrite(relePim1, HIGH);
+		atualizarEstadoFirebase("off", "led", "ldr");
+		ultimoStatus = "off";
+		Serial.println("LDR: claro -> Desligando");
 	}
 }
 
 // -----------------------------------------------------------------------------
-// Controle de presença via PIR
 void	verificarPresenca(void)
 {
 	if (digitalRead(pirPin) == HIGH)
@@ -186,18 +228,28 @@ void	verificarPresenca(void)
 		pirTriggered = true;
 		pirTriggerTime = millis();
 		Serial.println("Movimento detectado pelo sensor PIR");
-		digitalWrite(ledTeste, HIGH);
+		digitalWrite(ledAssentos1, HIGH);
 	}
 	if (pirTriggered && (millis() - pirTriggerTime >= pirActiveDuration))
 	{
 		pirTriggered = false;
-		digitalWrite(ledTeste, LOW);
+		digitalWrite(ledAssentos1, LOW);
 		Serial.println("Tempo de ativação expirado (PIR)");
 	}
 }
+//-----------------------------------------------------------------------------
+
+void	verificarFalhas(void)
+{
+	int	leitura;
+
+	leitura = analogRead(sensorCorrente1);
+	int corrente = leitura - offsetL1; // Valor relativo ao offset
+	Serial.print("Valor Corrente: ");
+	Serial.println(corrente);
+}
 
 // -----------------------------------------------------------------------------
-// Controle do circuito (se quiser ativar)
 void	LumaControlCircuit(String payload)
 {
 	DeserializationError	error;
@@ -215,22 +267,37 @@ void	LumaControlCircuit(String payload)
 }
 
 // -----------------------------------------------------------------------------
-// Loop principal
 void	loop(void)
 {
-	String	estadoLed;
 	String	estadoCircuito;
 
 	if (WiFi.status() == WL_CONNECTED)
 	{
-		estadoLed = obterEstadoFirebase(firebaseURL_LED);
+		wifiConnected = true;
+		estadoLedGlobal = obterEstadoFirebase(firebaseURL_LED);
 		estadoCircuito = obterEstadoFirebase(firebaseURL_CIRCUITO);
-		verificarLDR(estadoLed); // lógica com prioridade root
-		// LumaControlCircuit(estadoCircuito); // habilite se quiser
-		verificarPresenca();
+		LumaControlCircuit(estadoCircuito);
 	}
 	else
 	{
-		Serial.println("Wi-Fi desconectado");
+		wifiConnected = false;
+		// Serial.println("Wi-Fi desconectado");
+	}
+	verificarPresenca();
+	verificarFalhas();
+	delay(100);
+}
+
+// -----------------------------------------------------------------------------
+void	TaskControlLight(void *parameter)
+{
+	for (;;)
+	{
+		if (wifiConnected)
+			controlLight(estadoLedGlobal, "online");
+		else
+			controlLight("", "offline");
+
+		vTaskDelay(200 / portTICK_PERIOD_MS);
 	}
 }

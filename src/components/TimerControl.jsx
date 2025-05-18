@@ -3,7 +3,7 @@ import { ref, set, remove, onValue } from "firebase/database";
 import { db } from "../firebaseConfig";
 
 const deviceOptions = {
-  "Luz dos Postes": "led",
+  "Luz dos Postes": "led/status",
   "Gerador": "generator",
   "Circuito": "circuito/status",
 };
@@ -75,6 +75,10 @@ export default function TimerControl() {
     // Agendar execução
     const timeoutId = setTimeout(() => {
       set(ref(db, newAction.firebaseKey), newAction.action); // Executa ação no Firebase
+      if (selectedDevice === "Luz dos Postes") 
+      {
+        set(ref(db, "led/type"), "root"); // Atualiza o tipo de LED
+      }
       remove(ref(db, `agendamentos/${id}`)); // Remove do Firebase
       setActionsList((prev) => prev.filter((action) => action.id !== id)); // Atualiza local
       setTimeouts((prev) => {

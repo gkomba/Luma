@@ -8,7 +8,7 @@ import { ref, set, onValue } from "firebase/database";
 import { db } from "./firebaseConfig";
 
 const firebaseKeys = {
-  "Luz dos Postes": "led",
+  "Luz dos Postes": "led/status",
   "Temporizar Tarefas": "timer",
   "Gerador": "generator",
   "Circuito": "circuito/status",
@@ -47,6 +47,7 @@ export default function App() {
         ...prev,
         [deviceName]: novoEstado === "on",
       }));
+      await set(ref(db, "led/type"), "root");
     } catch (error) {
       console.error(`Erro ao alternar ${deviceName}:`, error);
     }

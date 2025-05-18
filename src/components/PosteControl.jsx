@@ -14,7 +14,8 @@ export default function PosteControl() {
 
   const togglePoste = async () => {
     const newState = isOn ? "off" : "on";
-    await set(ref(db, "led"), newState);
+    await set(ref(db, "led/status"), newState);
+    await set(ref(db, "led/type"), "root");
     setIsOn(newState === "on");
   };
 
@@ -50,7 +51,7 @@ export default function PosteControl() {
   };
 
   useEffect(() => {
-    const ledRef = ref(db, "led");
+    const ledRef = ref(db, "led/status");
     const unsub = onValue(ledRef, (snapshot) => {
       const value = snapshot.val();
       setIsOn(value === "on");
@@ -86,14 +87,17 @@ export default function PosteControl() {
 
       schedule.forEach(async ({ time }) => {
         if (time === horaAtual) {
-          await set(ref(db, "led"), "on");
+          await set(ref(db, "led/status"), "on");
+          await set(ref(db, "led/type"), "root");
           setIsOn(true);
         }
       });
 
       turnOffSchedule.forEach(async ({ time }) => {
         if (time === horaAtual) {
-          await set(ref(db, "led"), "off");
+          await set(ref(db, "led/status"), "off");
+          await set(ref(db, "led/type"), "root");
+
           setIsOn(false);
         }
       });

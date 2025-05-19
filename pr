@@ -1,0 +1,209 @@
+Princípio de Funcionamento – Sistema de Iluminação Inteligente para Parque
+
+1 - Alimentação Elétrica
+
+O sistema será alimentado por duas fontes de energia:
+
+Fonte Principal: Rede elétrica convencional.
+
+Fonte Auxiliar: Banco de baterias recarregáveis.
+
+Uma chave de transferência automática será responsável por alternar entre as fontes:
+
+Quando a rede elétrica principal estiver disponível, ela será a fonte ativa.
+
+Caso haja falha ou interrupção na rede principal, a chave comutará automaticamente para a fonte auxiliar (baterias).
+
+Assim que a rede principal for restabelecida, a chave retorna automaticamente para a fonte principal, garantindo o funcionamento ininterrupto do sistema.
+
+2 - Controle Inteligente e Automação
+
+O sistema conta com sensores distribuídos e um modulo de controle(ESP32) que gerencia os sensores, e tambem conta com uma interface web que permite acionamento remoto, monitoramento e automação:
+
+2.1 Módulo de Controle – ESP32
+
+O ESP32 atua como o cérebro central do sistema:
+
+Controla todos os sensores (LDR, movimento e corrente).
+
+Toma decisões baseadas nos dados recebidos.
+
+Envia e recebe comandos e dados via internet, mantendo o sistema web atualizado.
+
+Atua nas saídas digitais para ligar/desligar luzes e relés conforme a lógica programada.
+
+2.2. Conexão à Internet
+
+O ESP32 se conecta à internet via Wi-Fi, permitindo:
+
+Controle remoto via interface web.
+
+Envio de atualizações em tempo real sobre o estado das luzes, sensores e saúde do sistema.
+
+Recebimento de comandos remotos para acionamento manual ou temporizado.
+
+2.3. Sensor de Luminosidade (LDR)
+
+Monitora os níveis de luz natural no ambiente.
+
+Quando a luminosidade cai abaixo de um limite pré-definido (ex.: anoitecer ou céu muito nublado), o sensor:
+
+Aciona automaticamente os postes de iluminação.
+
+Envia uma atualização em tempo real para o sistema web, registrando o status das luzes.
+
+2.4 Sensor de Movimento
+
+Instalado próximo aos bancos e áreas de descanso do parque.
+
+Ao detectar movimento humano nas proximidades:
+
+Aciona os candeiros (luzes locais) para aumentar a segurança e visibilidade.
+
+As luzes permanecem acesas por um tempo programado, após o qual são desligadas automaticamente se não houver mais movimento.
+
+2.5 Sensor de Corrente
+Monitora a distribuição de energia ao longo do circuito de iluminação.
+
+Verifica a passagem de corrente elétrica nos pontos críticos.
+
+Caso identifique:
+
+Interrupção na corrente (indicando falha de cabeamento ou lâmpadas queimadas), o sistema:
+
+Gera um alerta para manutenção.
+
+Atualiza o status da rede no sistema web.
+
+3 - Sistema Web de Gestão
+A interface gráfica web permite aos operadores:
+
+Ligar e desligar manualmente os postes de iluminação.
+
+Temporizar tarefas, como acendimento ou apagamento programado.
+
+Visualizar em tempo real:
+
+Estado das luzes (ligadas/desligadas).
+
+Condição da rede elétrica (ativa/principal ou auxiliar).
+
+Alertas de falha elétrica (dados dos sensores de corrente).
+
+Resumo Funcional:
+Componente				Função
+Rede elétrica + baterias	Fornecimento de energia com redundância
+Chave de transferência		Comutação automática entre fontes
+ESP32				Processamento central, controle dos sensores e conectividade
+Conexão Wi-Fi			Comunicação entre ESP32 e sistema web
+Sensor LDR			Detecção de baixa luz e acionamento automático dos postes
+Sensor de movimento		Acionamento dos candeiros em resposta à presença
+Sensor de corrente		Diagnóstico e detecção de falhas na distribuição elétrica
+Sistema Web			Interface para controle, programação e visualização de status
+
+
+                        +----------------------------+
+                        |    Fonte de Energia        |
+                        |                            |
+                        | Rede Elétrica  + Baterias  |
+                        +----------------------------+
+                                   |
+                                   v
+                        +----------------------------+
+                        |     Chave de Transferência |
+                        +----------------------------+
+                                   |
+                                   v
+                        +----------------------------+
+                        |  Distribuição de Energia   |
+                        +----------------------------+
+                                   |
+                                   v
+                         +-------------------------+
+                         |         ESP32           |
+                         | (Módulo de Controle)    |
+                         +-------------------------+
+                           |     |       |      |
+                           |     |       |      |
+                           v     v       v      v
+                +-----------+  +------------+ +-------------+         +-----------------+
+                |  Sensor   |  |  Sensor de | |  Sensor de  | <------ |  Iluminação     |
+                |  LDR      |  |  Movimento | |  Corrente   |         |  (Postes +      |
+                +-----------+  +------------+ +-------------+         |   Candeiros)    |
+                     |               |             |                 +-----------------+
+                     |               |             |                        ^
+                     v               v             v                        |
+                +------------------------------------------------+         |
+                |             Conexão Wi-Fi (Internet)           |---------+
+                +------------------------------------------------+
+                                     |
+                                     v
+                     +-----------------------------------+
+                     |        Sistema Web (Interface)   |
+                     | - Controle Remoto                |
+                     | - Monitoramento em Tempo Real    |
+                     | - Temporização de Tarefas        |
+                     | - Alertas de Falhas              |
+                     +-----------------------------------+
+
+
+ [Início]
+     |
+     v
+ [Verifica Fonte de Energia Disponível]
+     |
+     |--[Rede Elétrica OK?]--Sim--> [Seleciona Rede Elétrica]
+     |                             |
+     |                             No
+     |                             v
+     |                      [Seleciona Bateria]
+     |
+     v
+ [Alimenta o ESP32 e o Sistema de Iluminação]
+     |
+     v
+ [Conecta ESP32 à Internet via Wi-Fi]
+     |
+     v
+ [Monitora Sensor LDR]
+     |
+     |--[Luz Ambiente < Limite?]--Sim--> [Liga Postes de Luz]
+     |                                    [Atualiza Status no Sistema Web]
+     |                                    [Envia Dados ao Web Server]
+     |                             No
+     |                              |
+     |                              v
+     |                        [Mantém Postes Desligados]
+     |
+     v
+ [Monitora Sensor de Movimento]
+     |
+     |--[Movimento Detectado?]--Sim--> [Liga Candeiros Próximos]
+     |                                  [Inicia Temporizador]
+     |                             No
+     |                              |
+     |                              v
+     |                        [Mantém Candeiros Desligados]
+     |
+     v
+ [Monitora Sensor de Corrente]
+     |
+     |--[Falha de Corrente Detectada?]--Sim--> [Gera Alerta no Sistema Web]
+     |                                       [Indica Possível Falha de Cabeamento]
+     |                             No
+     |                              |
+     |                              v
+     |                        [Sistema em Condição Normal]
+     |
+     v
+ [Verifica Comandos da Interface Web]
+     |
+     |--[Comando de Ação Recebido?]--Sim--> [Executa Ação (Ligar/Desligar/Temporizar)]
+     |                             No
+     |                              |
+     |                              v
+     |                        [Continua Monitoramento]
+     |
+     v
+ [Retorna ao Início do Ciclo]
+
